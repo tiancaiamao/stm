@@ -190,6 +190,60 @@ func TestAPI(t *testing.T) {
 	})
 }
 
+func TestWriteSkew(t *testing.T) {
+	var clock VersionClock
+	var a Var
+	var b Var
+
+	clock.Atomically(func(txn *Txn) {
+		a.Store(txn, 1)
+		b.Store(txn, 2)
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	ch := make(chan struct{})
+	go func() {
+		clock.Atomically(func(txn *Txn) {
+			<-ch
+			va, err := a.Load(txn)
+			if err != nil {
+				return
+			}
+			if va.(int) == 1 {
+				b.Store(txn, 666)
+			}
+		})
+		wg.Done()
+	}()
+
+	go func() {
+		clock.Atomically(func(txn *Txn) {
+			<-ch
+			vb, err := b.Load(txn)
+			if err != nil {
+				return
+			}
+			if vb.(int) == 2 {
+				a.Store(txn, 42)
+			}
+		})
+		wg.Done()
+	}()
+	close(ch)
+	wg.Wait()
+
+	// The result should be either a=1,b=666  or  a=42,b=2
+	// If the final result is a=42,b=666, it means write skew.
+	clock.Atomically(func(txn *Txn) {
+		va, _ := a.Load(txn)
+		vb, _ := b.Load(txn)
+		if va.(int) == 42 && vb.(int) == 666 {
+			t.Fail()
+		}
+	})
+}
+
 func BenchmarkReadOnly(b *testing.B) {
 	var end Var
 	var clock VersionClock

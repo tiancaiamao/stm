@@ -67,10 +67,12 @@ func (global *VersionClock) increment() uint64 {
 	return atomic.AddUint64((*uint64)(global), 1)
 }
 
-func (global *VersionClock) Atomically(speculative func(*Txn)) {
+var global VersionClock
+
+func Atomically(speculative func(*Txn)) {
 	var txn Txn
 	txn.readSet = txn.tmp[:0]
-	runWithTxn(global, &txn, speculative)
+	runWithTxn(&global, &txn, speculative)
 }
 
 func runWithTxn(global *VersionClock, txn *Txn, speculative func(*Txn)) {
@@ -109,7 +111,7 @@ func runWithTxn(global *VersionClock, txn *Txn, speculative func(*Txn)) {
 		writeVersion := global.increment()
 
 		// Step5: validate the read-set
-		if txn.wv == txn.rv+1 {
+		if writeVersion == txn.rv+1 {
 			// optimize: it means we are the only writer, so no need to validate the read set
 		} else {
 			for _, readVar := range txn.readSet {
@@ -180,7 +182,6 @@ func (v *Var) Store(txn *Txn, val interface{}) {
 
 func abortAndRetry(txn *Txn) {
 	txn.rv = 0
-	txn.wv = 0
 	txn.readSet = txn.readSet[:0]
 	if len(txn.locked) > 0 {
 		// Don't forget to release the locks!
@@ -194,7 +195,6 @@ func abortAndRetry(txn *Txn) {
 }
 
 func resetForReuse(txn *Txn) {
-	txn.wv = 0
 	txn.readSet = txn.readSet[:0]
 	txn.locked = txn.locked[:0]
 	clear(txn.writeSet)

@@ -9,8 +9,7 @@ import (
 func TestSum(t *testing.T) {
 	// repeat add1 100000 times concurrently, check the final result is 100000
 	var sum Var
-	var clock VersionClock
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		sum.Store(txn, 0)
 	})
 
@@ -21,7 +20,7 @@ func TestSum(t *testing.T) {
 	for x := 0; x < N; x++ {
 		go func(sum *Var) {
 			for i := 0; i < M; i++ {
-				clock.Atomically(func(txn *Txn) {
+				Atomically(func(txn *Txn) {
 					v, err := sum.Load(txn)
 					if err != nil {
 						return
@@ -34,7 +33,7 @@ func TestSum(t *testing.T) {
 	}
 	wg.Wait()
 
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		total, err := sum.Load(txn)
 		if err != nil {
 			return
@@ -51,7 +50,7 @@ func TestBankTransfer(t *testing.T) {
 	var account [10]Var
 
 	// initialize, each account balance = 100
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		for i := 0; i < len(account); i++ {
 			account[i].Store(txn, 100)
 		}
@@ -74,7 +73,7 @@ func TestBankTransfer(t *testing.T) {
 				}
 
 				// transfor from one to another
-				clock.Atomically(func(txn *Txn) {
+				Atomically(func(txn *Txn) {
 					vf, err := account[from].Load(txn)
 					if err != nil {
 						return
@@ -95,7 +94,7 @@ func TestBankTransfer(t *testing.T) {
 		}(i, &clock)
 	}
 	wg.Wait()
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		total := 0
 		for _, ac := range account {
 			val, err := ac.Load(txn)
@@ -115,8 +114,7 @@ func TestHeap(t *testing.T) {
 	// heap[end]
 	var heap [100]Var
 	var end Var
-	var clock VersionClock
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		end.Store(txn, 0)
 	})
 
@@ -149,7 +147,7 @@ func TestHeap(t *testing.T) {
 		go func(gid int) {
 			for j := 0; j < 20; j++ {
 				x := rand.Intn(500)
-				clock.Atomically(func(txn *Txn) {
+				Atomically(func(txn *Txn) {
 					heapAppend(gid, x, txn)
 				})
 			}
@@ -158,7 +156,7 @@ func TestHeap(t *testing.T) {
 	}
 	wg.Wait()
 
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		for i := 0; i < 100; i++ {
 			val, _ := heap[i].Load(txn)
 			if i*2 < 100 {
@@ -178,9 +176,8 @@ func TestHeap(t *testing.T) {
 }
 
 func TestAPI(t *testing.T) {
-	var clock VersionClock
 	var v Var
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		v.Load(txn)
 		v.Store(txn, 42)
 		res, _ := v.Load(txn)
@@ -191,11 +188,10 @@ func TestAPI(t *testing.T) {
 }
 
 func TestWriteSkew(t *testing.T) {
-	var clock VersionClock
 	var a Var
 	var b Var
 
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		a.Store(txn, 1)
 		b.Store(txn, 2)
 	})
@@ -204,7 +200,7 @@ func TestWriteSkew(t *testing.T) {
 	wg.Add(2)
 	ch := make(chan struct{})
 	go func() {
-		clock.Atomically(func(txn *Txn) {
+		Atomically(func(txn *Txn) {
 			<-ch
 			va, err := a.Load(txn)
 			if err != nil {
@@ -218,7 +214,7 @@ func TestWriteSkew(t *testing.T) {
 	}()
 
 	go func() {
-		clock.Atomically(func(txn *Txn) {
+		Atomically(func(txn *Txn) {
 			<-ch
 			vb, err := b.Load(txn)
 			if err != nil {
@@ -235,7 +231,7 @@ func TestWriteSkew(t *testing.T) {
 
 	// The result should be either a=1,b=666  or  a=42,b=2
 	// If the final result is a=42,b=666, it means write skew.
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		va, _ := a.Load(txn)
 		vb, _ := b.Load(txn)
 		if va.(int) == 42 && vb.(int) == 666 {
@@ -261,13 +257,12 @@ func BenchmarkReadOnly(b *testing.B) {
 
 func BenchmarkWriteRead(b *testing.B) {
 	var end Var
-	var clock VersionClock
-	clock.Atomically(func(txn *Txn) {
+	Atomically(func(txn *Txn) {
 		end.Store(txn, 42)
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		clock.Atomically(func(txn *Txn) {
+		Atomically(func(txn *Txn) {
 			end.Store(txn, 666)
 			end.Load(txn)
 		})

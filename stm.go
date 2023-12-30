@@ -12,7 +12,6 @@ type Txn struct {
 	readSet  []*Var
 	writeSet map[*Var]interface{}
 
-	wv     uint64 // write version
 	retry  bool
 	locked []*Var // Need to free lock before retry
 }
@@ -71,13 +70,17 @@ func (global *VersionClock) increment() uint64 {
 func (global *VersionClock) Atomically(speculative func(*Txn)) {
 	var txn Txn
 	txn.readSet = txn.tmp[:0]
+	runWithTxn(global, &txn, speculative)
+}
+
+func runWithTxn(global *VersionClock, txn *Txn, speculative func(*Txn)) {
 	for i := 0; ; i++ {
 		txn.retry = false
 		// Step1: sample global version-clock
 		txn.rv = global.load()
 
 		// Step2: run through a speculative execution
-		speculative(&txn)
+		speculative(txn)
 		if txn.retry {
 			continue
 		}
@@ -93,7 +96,7 @@ func (global *VersionClock) Atomically(speculative func(*Txn)) {
 		}
 		for writeVar := range txn.writeSet {
 			if ok := writeVar.lock.tryAcquire(); !ok {
-				abortAndRetry(&txn)
+				abortAndRetry(txn)
 				break
 			}
 			txn.locked = append(txn.locked, writeVar)
@@ -103,7 +106,7 @@ func (global *VersionClock) Atomically(speculative func(*Txn)) {
 		}
 
 		// Step4: increment global version-clock
-		txn.wv = global.increment()
+		writeVersion := global.increment()
 
 		// Step5: validate the read-set
 		if txn.wv == txn.rv+1 {
@@ -116,7 +119,7 @@ func (global *VersionClock) Atomically(speculative func(*Txn)) {
 					_, lockedByMe = txn.writeSet[readVar]
 				}
 				if (locked && !lockedByMe) || version > txn.rv {
-					abortAndRetry(&txn)
+					abortAndRetry(txn)
 					break
 				}
 			}
@@ -126,9 +129,14 @@ func (global *VersionClock) Atomically(speculative func(*Txn)) {
 		}
 
 		// Step6: commit and free lock
-		commitTxn(&txn)
+		commitTxn(txn, writeVersion)
 		return
 	}
+}
+
+func Run(global *VersionClock, txn *Txn, speculative func(*Txn)) {
+	resetForReuse(txn)
+	runWithTxn(global, txn, speculative)
 }
 
 var errRetry = errors.New("transaction conflicts, should retry")
@@ -185,9 +193,16 @@ func abortAndRetry(txn *Txn) {
 	txn.retry = true
 }
 
-func commitTxn(txn *Txn) {
+func resetForReuse(txn *Txn) {
+	txn.wv = 0
+	txn.readSet = txn.readSet[:0]
+	txn.locked = txn.locked[:0]
+	clear(txn.writeSet)
+}
+
+func commitTxn(txn *Txn, wv uint64) {
 	for writeVar, val := range txn.writeSet {
 		writeVar.val = val
-		writeVar.lock.commit(txn.wv)
+		writeVar.lock.commit(wv)
 	}
 }

@@ -247,12 +247,13 @@ func TestWriteSkew(t *testing.T) {
 func BenchmarkReadOnly(b *testing.B) {
 	var end Var
 	var clock VersionClock
-	clock.Atomically(func(txn *Txn) {
+	var txn Txn
+	Run(&clock, &txn, func(txn *Txn) {
 		end.Store(txn, 42)
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		clock.Atomically(func(txn *Txn) {
+		Run(&clock, &txn, func(txn *Txn) {
 			end.Load(txn)
 		})
 	}

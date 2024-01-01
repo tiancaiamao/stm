@@ -257,12 +257,14 @@ func BenchmarkReadOnly(b *testing.B) {
 
 func BenchmarkWriteRead(b *testing.B) {
 	var end Var
-	Atomically(func(txn *Txn) {
+	var clock VersionClock
+	var txn Txn
+	Run(&clock, &txn, func(txn *Txn) {
 		end.Store(txn, 42)
 	})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Atomically(func(txn *Txn) {
+		Run(&clock, &txn, func(txn *Txn) {
 			end.Store(txn, 666)
 			end.Load(txn)
 		})

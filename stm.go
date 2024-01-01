@@ -136,6 +136,8 @@ func runWithTxn(global *VersionClock, txn *Txn, speculative func(*Txn)) {
 	}
 }
 
+// Run differs from Atomically that it use separate VersionClock instead of a global one,
+// and it reuse Txn object to get better performance.
 func Run(global *VersionClock, txn *Txn, speculative func(*Txn)) {
 	resetForReuse(txn)
 	runWithTxn(global, txn, speculative)
